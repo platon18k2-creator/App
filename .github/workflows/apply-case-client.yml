@@ -1,0 +1,334 @@
+name: Apply case client logic
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "!contains(github.event.head_commit.message, '[case-patched]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch localscript.lua
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('localscript.lua')
+          s = p.read_text(encoding='utf-8')
+
+          if 'CASE_CLIENT_V1' in s:
+              print('Already patched')
+              raise SystemExit(0)
+
+          # RemoteEvent used by the server case script.
+          anchor = 'local requestOwnedItemsEvent = ReplicatedStorage:WaitForChild("RequestOwnedItemsEvent")'
+          replacement = anchor + '\nlocal openCaseEvent = ReplicatedStorage:WaitForChild("OpenCase")'
+          if 'local openCaseEvent = ReplicatedStorage:WaitForChild("OpenCase")' not in s:
+              if anchor not in s:
+                  raise SystemExit('Could not find event anchor')
+              s = s.replace(anchor, replacement, 1)
+
+          # Rename Guns tab to Cases while keeping Variants/Titles untouched.
+          s = s.replace('createShopTab("Weapons", "Guns", "Weapons")', 'createShopTab("Cases", "Cases", "Cases")', 1)
+
+          # Remove the old direct weapon shop and replace it with one case card.
+          weapons_pattern = re.compile(r'\n\tif currentShopTab == "Weapons" then\n.*?\n\tend\n\n\t-- Варианты дэша', re.S)
+          case_section = r'''
+\tif currentShopTab == "Cases" then
+\t\tlocal caseCard = Instance.new("Frame")
+\t\tcaseCard.Name = "CaseCard"
+\t\tcaseCard.BackgroundColor3 = C.card
+\t\tcaseCard.Parent = shopScroll
+\t\tmakeCorner(caseCard, 12)
+\t\tmakeGradient(caseCard, Color3.fromRGB(42, 32, 40), C.card, 90)
+\t\tlocal caseStroke = makeStroke(caseCard, 1.5, C.accent, 0.25)
+
+\t\tlocal caseIcon = Instance.new("ImageLabel")
+\t\tcaseIcon.Size = UDim2.new(0, 85, 0, 85)
+\t\tcaseIcon.Position = UDim2.new(0.5, 0, 0, 10)
+\t\tcaseIcon.AnchorPoint = Vector2.new(0.5, 0)
+\t\tcaseIcon.BackgroundTransparency = 1
+\t\tcaseIcon.Image = "rbxassetid://298260830"
+\t\tcaseIcon.Parent = caseCard
+
+\t\tlocal caseName = Instance.new("TextLabel")
+\t\tcaseName.Size = UDim2.new(1, -10, 0, 24)
+\t\tcaseName.Position = UDim2.new(0, 5, 0, 100)
+\t\tcaseName.BackgroundTransparency = 1
+\t\tcaseName.Font = Enum.Font.GothamBold
+\t\tcaseName.TextSize = 17
+\t\tcaseName.TextColor3 = C.white
+\t\tcaseName.Text = "WEAPON CASE"
+\t\tcaseName.Parent = caseCard
+
+\t\tlocal caseDesc = Instance.new("TextLabel")
+\t\tcaseDesc.Size = UDim2.new(1, -16, 0, 32)
+\t\tcaseDesc.Position = UDim2.new(0, 8, 0, 127)
+\t\tcaseDesc.BackgroundTransparency = 1
+\t\tcaseDesc.Font = Enum.Font.Gotham
+\t\tcaseDesc.TextSize = 11
+\t\tcaseDesc.TextColor3 = C.gray
+\t\tcaseDesc.TextWrapped = true
+\t\tcaseDesc.Text = "Random weapon • server selected"
+\t\tcaseDesc.Parent = caseCard
+
+\t\tlocal openCaseBtn = Instance.new("TextButton")
+\t\topenCaseBtn.Size = UDim2.new(1, -10, 0, 36)
+\t\topenCaseBtn.Position = UDim2.new(0, 5, 1, -42)
+\t\topenCaseBtn.BackgroundColor3 = C.accentDim
+\t\topenCaseBtn.Font = Enum.Font.GothamBold
+\t\topenCaseBtn.TextSize = 14
+\t\topenCaseBtn.TextColor3 = C.white
+\t\topenCaseBtn.Text = "OPEN CASE — 1000 $"
+\t\topenCaseBtn.Parent = caseCard
+\t\tmakeCorner(openCaseBtn, 8)
+\t\tlocal caseBtnStroke = makeStroke(openCaseBtn, 1.5, C.accent, 0.2)
+\t\tplayHover(openCaseBtn, caseBtnStroke)
+\t\tplayClick(openCaseBtn)
+
+\t\topenCaseBtn.MouseButton1Click:Connect(function()
+\t\t\tif caseOpening then return end
+\t\t\topenCaseEvent:FireServer()
+\t\tend)
+\tend
+
+\t-- Варианты дэша'''
+
+          if not weapons_pattern.search(s):
+              raise SystemExit('Could not find old Weapons block')
+          s = weapons_pattern.sub('\n' + case_section, s, count=1)
+
+          # Case-opening animation is inserted immediately before buildShopItems.
+          marker = 'buildShopItems = function()'
+          if marker not in s:
+              raise SystemExit('Could not find buildShopItems marker')
+
+          case_anim = r'''
+-- ==================== CASE OPENING ====================
+local caseOpening = false
+
+local function showCaseResult(itemName, itemIcon)
+\tlocal gui = Instance.new("ScreenGui")
+\tgui.Name = "CaseResult"
+\tgui.ResetOnSpawn = false
+\tgui.IgnoreGuiInset = true
+\tgui.DisplayOrder = 600
+\tgui.Parent = playerGui
+
+\tlocal bg = Instance.new("Frame")
+\tbg.Size = UDim2.new(1, 0, 1, 0)
+\tbg.BackgroundColor3 = Color3.fromRGB(4, 4, 7)
+\tbg.BackgroundTransparency = 0.2
+\tbg.Parent = gui
+
+\tlocal box = Instance.new("Frame")
+\tbox.Size = UDim2.new(0, 420, 0, 300)
+\tbox.Position = UDim2.new(0.5, 0, 0.5, 0)
+\tbox.AnchorPoint = Vector2.new(0.5, 0.5)
+\tbox.BackgroundColor3 = C.bg
+\tbox.Parent = bg
+\tmakeCorner(box, 16)
+\tmakeStroke(box, 2, C.accent, 0.2)
+
+\tlocal title = Instance.new("TextLabel")
+\ttitle.Size = UDim2.new(1, 0, 0, 50)
+\ttitle.Position = UDim2.new(0, 0, 0, 18)
+\ttitle.BackgroundTransparency = 1
+\ttitle.Font = Enum.Font.GothamBold
+\ttitle.TextSize = 28
+\ttitle.TextColor3 = C.accent
+\ttitle.Text = "YOU GOT!"
+\ttitle.Parent = box
+
+\tlocal icon = Instance.new("ImageLabel")
+\ticon.Size = UDim2.new(0, 110, 0, 110)
+\ticon.Position = UDim2.new(0.5, 0, 0, 72)
+\ticon.AnchorPoint = Vector2.new(0.5, 0)
+\ticon.BackgroundTransparency = 1
+\ticon.Image = itemIcon or "rbxassetid://298260830"
+\ticon.Parent = box
+
+\tlocal name = Instance.new("TextLabel")
+\tname.Size = UDim2.new(1, -20, 0, 40)
+\tname.Position = UDim2.new(0, 10, 0, 190)
+\tname.BackgroundTransparency = 1
+\tname.Font = Enum.Font.GothamBold
+\tname.TextSize = 22
+\tname.TextColor3 = C.white
+\tname.Text = tostring(itemName)
+\tname.Parent = box
+
+\tlocal close = Instance.new("TextButton")
+\tclose.Size = UDim2.new(0, 180, 0, 38)
+\tclose.Position = UDim2.new(0.5, 0, 1, -50)
+\tclose.AnchorPoint = Vector2.new(0.5, 0)
+\tclose.BackgroundColor3 = C.accent
+\tclose.Font = Enum.Font.GothamBold
+\tclose.TextSize = 14
+\tclose.TextColor3 = C.white
+\tclose.Text = "CONTINUE"
+\tclose.Parent = box
+\tmakeCorner(close, 8)
+\tlocal closeStroke = makeStroke(close, 1, C.accent, 0.15)
+\tplayHover(close, closeStroke)
+\tplayClick(close)
+\tclose.MouseButton1Click:Connect(function()
+\t\tgui:Destroy()
+\t\tcaseOpening = false
+\tend)
+
+\tTweenService:Create(box, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+\t\tSize = UDim2.new(0, 450, 0, 320)
+\t}):Play()
+end
+
+openCaseEvent.OnClientEvent:Connect(function(data)
+\tif caseOpening then return end
+\tif not data or not data.success then
+\t\tif safeGetSetting('uiSounds', true) then errorSound:Play() end
+\t\tif _G.showNotification then
+\t\t\t_G.showNotification(data and data.reason == "NOT_ENOUGH_MONEY" and "Not enough money!" or "Case cannot be opened!", C.red, 3)
+\t\tend
+\t\treturn
+\tend
+
+\tcaseOpening = true
+\tlocal gui = Instance.new("ScreenGui")
+\tgui.Name = "CaseOpening"
+\tgui.ResetOnSpawn = false
+\tgui.IgnoreGuiInset = true
+\tgui.DisplayOrder = 550
+\tgui.Parent = playerGui
+
+\tlocal bg = Instance.new("Frame")
+\tbg.Size = UDim2.new(1, 0, 1, 0)
+\tbg.BackgroundColor3 = Color3.fromRGB(4, 4, 7)
+\tbg.BackgroundTransparency = 0.15
+\tbg.Parent = gui
+
+\tlocal box = Instance.new("Frame")
+\tbox.Size = UDim2.new(0, 720, 0, 260)
+\tbox.Position = UDim2.new(0.5, 0, 0.5, 0)
+\tbox.AnchorPoint = Vector2.new(0.5, 0.5)
+\tbox.BackgroundColor3 = C.bg
+\tbox.Parent = bg
+\tmakeCorner(box, 16)
+\tmakeStroke(box, 2, C.accent, 0.2)
+
+\tlocal title = Instance.new("TextLabel")
+\ttitle.Size = UDim2.new(1, 0, 0, 40)
+\ttitle.Position = UDim2.new(0, 0, 0, 12)
+\ttitle.BackgroundTransparency = 1
+\ttitle.Font = Enum.Font.GothamBold
+\ttitle.TextSize = 22
+\ttitle.TextColor3 = C.white
+\ttitle.Text = "OPENING CASE..."
+\ttitle.Parent = box
+
+\tlocal reel = Instance.new("Frame")
+\treel.Size = UDim2.new(1, -40, 0, 130)
+\treel.Position = UDim2.new(0, 20, 0, 65)
+\treel.BackgroundColor3 = Color3.fromRGB(9, 10, 14)
+\treel.ClipsDescendants = true
+\treel.Parent = box
+\tmakeCorner(reel, 10)
+
+\tlocal marker = Instance.new("Frame")
+\tmarker.Size = UDim2.new(0, 4, 1, 0)
+\tmarker.Position = UDim2.new(0.5, -2, 0, 0)
+\tmarker.BackgroundColor3 = C.accent
+\tmarker.ZIndex = 20
+\tmarker.Parent = reel
+
+\tlocal track = Instance.new("Frame")
+\ttrack.Size = UDim2.new(0, 5200, 1, 0)
+\ttrack.Position = UDim2.new(0, 0, 0, 0)
+\ttrack.BackgroundTransparency = 1
+\ttrack.Parent = reel
+
+\tlocal layout = Instance.new("UIListLayout")
+\tlayout.FillDirection = Enum.FillDirection.Horizontal
+\tlayout.Padding = UDim.new(0, 8)
+\tlayout.VerticalAlignment = Enum.VerticalAlignment.Center
+\tlayout.Parent = track
+
+\tlocal names = {}
+\tfor _, tool in ipairs(shopItemsFolder:GetChildren()) do
+\t\tif tool:IsA("Tool") then table.insert(names, tool.Name) end
+\tend
+\tif #names == 0 then
+\t\tgui:Destroy()
+\t\tcaseOpening = false
+\t\treturn
+\tend
+
+\tlocal selectedIndex = 32
+\tfor i = 1, 46 do
+\t\tlocal n = (i == selectedIndex) and data.item or names[math.random(1, #names)]
+\t\tlocal card = Instance.new("Frame")
+\t\tcard.Size = UDim2.new(0, 118, 0, 112)
+\t\tcard.BackgroundColor3 = C.card
+\t\tcard.Parent = track
+\t\tmakeCorner(card, 8)
+\t\tlocal st = makeStroke(card, i == selectedIndex and 2 or 1, i == selectedIndex and C.accent or C.white, i == selectedIndex and 0.1 or 0.7)
+
+\t\tlocal icon = Instance.new("ImageLabel")
+\t\ticon.Size = UDim2.new(0, 64, 0, 64)
+\t\ticon.Position = UDim2.new(0.5, 0, 0, 6)
+\t\ticon.AnchorPoint = Vector2.new(0.5, 0)
+\t\ticon.BackgroundTransparency = 1
+\t\tlocal source = shopItemsFolder:FindFirstChild(n)
+\t\ticon.Image = source and source.TextureId ~= "" and source.TextureId or "rbxassetid://298260830"
+\t\ticon.Parent = card
+
+\t\tlocal label = Instance.new("TextLabel")
+\t\tlabel.Size = UDim2.new(1, -8, 0, 30)
+\t\tlabel.Position = UDim2.new(0, 4, 1, -34)
+\t\tlabel.BackgroundTransparency = 1
+\t\tlabel.Font = Enum.Font.GothamBold
+\t\tlabel.TextSize = 11
+\t\tlabel.TextColor3 = C.white
+\t\tlabel.TextWrapped = true
+\t\tlabel.Text = n
+\t\tlabel.Parent = card
+\tend
+
+\ttask.wait(0.15)
+\tlocal cardWidth = 118
+\tlocal gap = 8
+\tlocal targetX = -((selectedIndex - 1) * (cardWidth + gap)) + reel.AbsoluteSize.X / 2 - cardWidth / 2
+\tif safeGetSetting('uiSounds', true) then clickSound:Play() end
+\n\tlocal tween = TweenService:Create(track, TweenInfo.new(4.8, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = UDim2.new(0, targetX, 0, 0)})
+\ttween:Play()
+\ttween.Completed:Wait()
+\ttask.wait(0.35)
+\tgui:Destroy()
+
+\tlocal winner = shopItemsFolder:FindFirstChild(data.item)
+\tshowCaseResult(data.item, winner and winner.TextureId or nil)
+end)
+
+'''
+
+          s = s.replace(marker, case_anim + marker, 1)
+
+          p.write_text(s, encoding='utf-8')
+          print('Patched localscript.lua')
+          PY
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add localscript.lua
+          git diff --cached --quiet && exit 0
+          git commit -m "Add case shop and opening animation [case-patched]"
+          git push
