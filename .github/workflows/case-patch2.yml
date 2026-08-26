@@ -1,0 +1,39 @@
+name: Patch case client
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch LocalScript
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('localscript.lua')
+          s=p.read_text(encoding='utf-8')
+          if 'CASE_CLIENT_V3' in s:
+              raise SystemExit(0)
+          anchor='local requestOwnedItemsEvent = ReplicatedStorage:WaitForChild("RequestOwnedItemsEvent")'
+          if 'local openCaseEvent = ReplicatedStorage:WaitForChild("OpenCase")' not in s:
+              s=s.replace(anchor,anchor+'\nlocal openCaseEvent = ReplicatedStorage:WaitForChild("OpenCase")',1)
+          s=s.replace('createShopTab("Weapons", "Guns", "Weapons")','createShopTab("Cases", "Cases", "Cases")',1)
+          pat=re.compile(r'\n\tif currentShopTab == "Weapons" then\n.*?\n\tend\n\n\t-- Варианты дэша',re.S)
+          repl='''\n\tif currentShopTab == "Cases" then\n\t\tlocal card=Instance.new("Frame")\n\t\tcard.Name="CaseCard"\n\t\tcard.BackgroundColor3=C.card\n\t\tcard.Parent=shopScroll\n\t\tmakeCorner(card,12)\n\t\tmakeStroke(card,1.5,C.accent,0.25)\n\t\tlocal icon=Instance.new("ImageLabel")\n\t\ticon.Size=UDim2.new(0,85,0,85)\n\t\ticon.Position=UDim2.new(0.5,0,0,10)\n\t\ticon.AnchorPoint=Vector2.new(0.5,0)\n\t\ticon.BackgroundTransparency=1\n\t\ticon.Image="rbxassetid://298260830"\n\t\ticon.Parent=card\n\t\tlocal name=Instance.new("TextLabel")\n\t\tname.Size=UDim2.new(1,-10,0,24)\n\t\tname.Position=UDim2.new(0,5,0,100)\n\t\tname.BackgroundTransparency=1\n\t\tname.Font=Enum.Font.GothamBold\n\t\tname.TextSize=17\n\t\tname.TextColor3=C.white\n\t\tname.Text="WEAPON CASE"\n\t\tname.Parent=card\n\t\tlocal btn=Instance.new("TextButton")\n\t\tbtn.Size=UDim2.new(1,-10,0,36)\n\t\tbtn.Position=UDim2.new(0,5,1,-42)\n\t\tbtn.BackgroundColor3=C.accentDim\n\t\tbtn.Font=Enum.Font.GothamBold\n\t\tbtn.TextSize=14\n\t\tbtn.TextColor3=C.white\n\t\tbtn.Text="OPEN CASE — 1000 $"\n\t\tbtn.Parent=card\n\t\tmakeCorner(btn,8)\n\t\tlocal st=makeStroke(btn,1.5,C.accent,0.2)\n\t\tplayHover(btn,st)\n\t\tplayClick(btn)\n\t\tbtn.MouseButton1Click:Connect(function() if caseOpening then return end openCaseEvent:FireServer() end)\n\tend\n\n\t-- Варианты дэша'''
+          s,n=pat.subn(repl,s,count=1)
+          if n!=1: raise SystemExit('Weapons block not found')
+          marker='buildShopItems = function()'
+          ui='''-- CASE_CLIENT_V3\nlocal caseOpening=false\nlocal function caseResult(item)\n  local g=Instance.new("ScreenGui");g.ResetOnSpawn=false;g.IgnoreGuiInset=true;g.DisplayOrder=600;g.Parent=playerGui\n  local b=Instance.new("Frame");b.Size=UDim2.new(1,0,1,0);b.BackgroundColor3=Color3.new(0,0,0);b.BackgroundTransparency=.2;b.Parent=g\n  local w=Instance.new("Frame");w.Size=UDim2.new(0,420,0,280);w.Position=UDim2.new(.5,0,.5,0);w.AnchorPoint=Vector2.new(.5,.5);w.BackgroundColor3=C.bg;w.Parent=b;makeCorner(w,16);makeStroke(w,2,C.accent,.2)\n  local t=Instance.new("TextLabel");t.Size=UDim2.new(1,0,0,50);t.Position=UDim2.new(0,0,0,15);t.BackgroundTransparency=1;t.Font=Enum.Font.GothamBold;t.TextSize=28;t.TextColor3=C.accent;t.Text="YOU GOT!";t.Parent=w\n  local n=Instance.new("TextLabel");n.Size=UDim2.new(1,-20,0,50);n.Position=UDim2.new(0,10,0,90);n.BackgroundTransparency=1;n.Font=Enum.Font.GothamBold;n.TextSize=24;n.TextColor3=C.white;n.Text=item;n.Parent=w\n  local ok=Instance.new("TextButton");ok.Size=UDim2.new(0,180,0,38);ok.Position=UDim2.new(.5,0,1,-48);ok.AnchorPoint=Vector2.new(.5,0);ok.BackgroundColor3=C.accent;ok.Font=Enum.Font.GothamBold;ok.TextSize=14;ok.TextColor3=C.white;ok.Text="CONTINUE";ok.Parent=w;makeCorner(ok,8);ok.MouseButton1Click:Connect(function()g:Destroy();caseOpening=false end)\nend\nopenCaseEvent.OnClientEvent:Connect(function(d)\n  if caseOpening then return end\n  if not d or not d.success then if _G.showNotification then _G.showNotification(d and d.reason=="NOT_ENOUGH_MONEY" and "Not enough money!" or "Case error!",C.red,3) end return end\n  caseOpening=true\n  local g=Instance.new("ScreenGui");g.ResetOnSpawn=false;g.IgnoreGuiInset=true;g.DisplayOrder=550;g.Parent=playerGui\n  local b=Instance.new("Frame");b.Size=UDim2.new(1,0,1,0);b.BackgroundColor3=Color3.new(0,0,0);b.BackgroundTransparency=.15;b.Parent=g\n  local w=Instance.new("Frame");w.Size=UDim2.new(0,720,0,230);w.Position=UDim2.new(.5,0,.5,0);w.AnchorPoint=Vector2.new(.5,.5);w.BackgroundColor3=C.bg;w.Parent=b;makeCorner(w,16);makeStroke(w,2,C.accent,.2)\n  local r=Instance.new("Frame");r.Size=UDim2.new(1,-40,0,120);r.Position=UDim2.new(0,20,0,60);r.BackgroundColor3=Color3.fromRGB(8,9,12);r.ClipsDescendants=true;r.Parent=w;makeCorner(r,10)\n  local m=Instance.new("Frame");m.Size=UDim2.new(0,4,1,0);m.Position=UDim2.new(.5,-2,0,0);m.BackgroundColor3=C.accent;m.ZIndex=10;m.Parent=r\n  local tr=Instance.new("Frame");tr.Size=UDim2.new(0,6000,1,0);tr.BackgroundTransparency=1;tr.Parent=r\n  local lay=Instance.new("UIListLayout");lay.FillDirection=Enum.FillDirection.Horizontal;lay.Padding=UDim.new(0,8);lay.Parent=tr\n  local items={};for _,x in ipairs(shopItemsFolder:GetChildren()) do if x:IsA("Tool") then table.insert(items,x) end end\n  if #items==0 then g:Destroy();caseOpening=false;return end\n  local idx=35\n  for i=1,50 do\n    local x=(i==idx and d.item) or items[math.random(1,#items)].Name\n    local c=Instance.new("Frame");c.Size=UDim2.new(0,118,0,105);c.BackgroundColor3=C.card;c.Parent=tr;makeCorner(c,8)\n    local q=Instance.new("TextLabel");q.Size=UDim2.new(1,-8,1,-8);q.Position=UDim2.new(0,4,0,4);q.BackgroundTransparency=1;q.Font=Enum.Font.GothamBold;q.TextSize=12;q.TextColor3=C.white;q.TextWrapped=true;q.Text=x;q.Parent=c\n  end\n  task.wait(.1)\n  local tx=-((idx-1)*126)+(r.AbsoluteSize.X/2)-59\n  TweenService:Create(tr,TweenInfo.new(4.5,Enum.EasingStyle.Quint,Enum.EasingDirection.Out),{Position=UDim2.new(0,tx,0,0)}):Play()\n  task.wait(4.6);g:Destroy();caseResult(d.item)\nend)\n\n'''
+          if marker not in s: raise SystemExit('marker missing')
+          s=s.replace(marker,ui+marker,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add localscript.lua
+          git diff --cached --quiet || git commit -m 'Case shop client logic [case-patched]'
+          git push
