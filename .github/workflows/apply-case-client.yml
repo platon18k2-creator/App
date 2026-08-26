@@ -1,4 +1,4 @@
-name: Apply case shop client patch
+name: Patch case shop
 
 on:
   push:
@@ -9,273 +9,300 @@ permissions:
 
 jobs:
   patch:
-    if: "!contains(github.event.head_commit.message, '[case-done]')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Patch localscript.lua
-        shell: bash
+      - name: Patch LocalScript
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
-
           p = Path('localscript.lua')
           s = p.read_text(encoding='utf-8')
 
-          if 'CASE_CLIENT_V2' in s:
-              print('Already patched')
+          if 'CASE_CLIENT_V3' in s:
               raise SystemExit(0)
 
-          anchor = 'local requestOwnedItemsEvent = ReplicatedStorage:WaitForChild("RequestOwnedItemsEvent")'
-          event_line = 'local openCaseEvent = ReplicatedStorage:WaitForChild("OpenCase")'
-          if event_line not in s:
-              if anchor not in s:
-                  raise SystemExit('Event anchor not found')
-              s = s.replace(anchor, anchor + '\n' + event_line, 1)
+          event_anchor = 'local requestOwnedItemsEvent = ReplicatedStorage:WaitForChild("RequestOwnedItemsEvent")'
+          if 'local openCaseEvent = ReplicatedStorage:WaitForChild("OpenCase")' not in s:
+              s = s.replace(event_anchor, event_anchor + '\nlocal openCaseEvent = ReplicatedStorage:WaitForChild("OpenCase")', 1)
 
           s = s.replace('local currentShopTab = "Weapons"', 'local currentShopTab = "Cases"', 1)
           s = s.replace('createShopTab("Weapons", "Guns", "Weapons")', 'createShopTab("Cases", "Cases", "Cases")', 1)
 
           start = s.find('\n\tif currentShopTab == "Weapons" then')
-          marker = '\n\t-- Варианты дэша'
-          end = s.find(marker, start)
-          if start == -1 or end == -1 or end <= start:
-              raise SystemExit('Weapons block not found')
+          stop = s.find('\n\t-- Варианты дэша', start)
+          if start == -1 or stop == -1:
+              raise SystemExit('Weapons shop block not found')
 
-          case_block = r'''
-	if currentShopTab == "Cases" then
-		local caseCard = Instance.new("Frame")
-		caseCard.Name = "CaseCard"
-		caseCard.BackgroundColor3 = C.card
-		caseCard.Parent = shopScroll
-		makeCorner(caseCard, 12)
-		makeGradient(caseCard, Color3.fromRGB(42, 32, 40), C.card, 90)
-		makeStroke(caseCard, 1.5, C.accent, 0.25)
+          case_block = '''
+\tif currentShopTab == "Cases" then
+\t\tlocal card = Instance.new("Frame")
+\t\tcard.Name = "CaseCard"
+\t\tcard.BackgroundColor3 = C.card
+\t\tcard.Parent = shopScroll
+\t\tmakeCorner(card, 10)
+\t\tmakeGradient(card, Color3.fromRGB(42, 32, 40), C.card, 90)
+\t\tmakeStroke(card, 1.5, C.accent, 0.25)
 
-		local caseIcon = Instance.new("ImageLabel")
-		caseIcon.Size = UDim2.new(0, 85, 0, 85)
-		caseIcon.Position = UDim2.new(0.5, 0, 0, 10)
-		caseIcon.AnchorPoint = Vector2.new(0.5, 0)
-		caseIcon.BackgroundTransparency = 1
-		caseIcon.Image = "rbxassetid://298260830"
-		caseIcon.Parent = caseCard
+\t\tlocal icon = Instance.new("ImageLabel")
+\t\ticon.Size = UDim2.new(0, 80, 0, 80)
+\t\ticon.Position = UDim2.new(0.5, 0, 0, 10)
+\t\ticon.AnchorPoint = Vector2.new(0.5, 0)
+\t\ticon.BackgroundTransparency = 1
+\t\ticon.Image = "rbxassetid://298260830"
+\t\ticon.Parent = card
 
-		local caseName = Instance.new("TextLabel")
-		caseName.Size = UDim2.new(1, -10, 0, 24)
-		caseName.Position = UDim2.new(0, 5, 0, 100)
-		caseName.BackgroundTransparency = 1
-		caseName.Font = Enum.Font.GothamBold
-		caseName.TextSize = 17
-		caseName.TextColor3 = C.white
-		caseName.Text = "WEAPON CASE"
-		caseName.Parent = caseCard
+\t\tlocal name = Instance.new("TextLabel")
+\t\tname.Size = UDim2.new(1, -10, 0, 22)
+\t\tname.Position = UDim2.new(0, 5, 0, 92)
+\t\tname.BackgroundTransparency = 1
+\t\tname.Font = Enum.Font.GothamBold
+\t\tname.TextSize = 16
+\t\tname.TextColor3 = C.white
+\t\tname.Text = "WEAPON CASE"
+\t\tname.Parent = card
 
-		local caseDesc = Instance.new("TextLabel")
-		caseDesc.Size = UDim2.new(1, -16, 0, 32)
-		caseDesc.Position = UDim2.new(0, 8, 0, 127)
-		caseDesc.BackgroundTransparency = 1
-		caseDesc.Font = Enum.Font.Gotham
-		caseDesc.TextSize = 11
-		caseDesc.TextColor3 = C.gray
-		caseDesc.TextWrapped = true
-		caseDesc.Text = "Random weapon from the case"
-		caseDesc.Parent = caseCard
+\t\tlocal desc = Instance.new("TextLabel")
+\t\tdesc.Size = UDim2.new(1, -10, 0, 28)
+\t\tdesc.Position = UDim2.new(0, 5, 0, 116)
+\t\tdesc.BackgroundTransparency = 1
+\t\tdesc.Font = Enum.Font.Gotham
+\t\tdesc.TextSize = 11
+\t\tdesc.TextColor3 = C.gray
+\t\tdesc.TextWrapped = true
+\t\tdesc.Text = "Random weapon"
+\t\tdesc.Parent = card
 
-		local openCaseBtn = Instance.new("TextButton")
-		openCaseBtn.Size = UDim2.new(1, -10, 0, 36)
-		openCaseBtn.Position = UDim2.new(0, 5, 1, -42)
-		openCaseBtn.BackgroundColor3 = C.accentDim
-		openCaseBtn.Font = Enum.Font.GothamBold
-		openCaseBtn.TextSize = 14
-		openCaseBtn.TextColor3 = C.white
-		openCaseBtn.Text = "OPEN CASE — 1000 $"
-		openCaseBtn.Parent = caseCard
-		makeCorner(openCaseBtn, 8)
-		local caseBtnStroke = makeStroke(openCaseBtn, 1.5, C.accent, 0.2)
-		playHover(openCaseBtn, caseBtnStroke)
-		playClick(openCaseBtn)
-
-		openCaseBtn.MouseButton1Click:Connect(function()
-			if caseOpening then return end
-			openCaseEvent:FireServer()
-		end)
-	end
+\t\tlocal openBtn = Instance.new("TextButton")
+\t\topenBtn.Size = UDim2.new(1, -10, 0, 34)
+\t\topenBtn.Position = UDim2.new(0, 5, 1, -40)
+\t\topenBtn.BackgroundColor3 = C.accentDim
+\t\topenBtn.Font = Enum.Font.GothamBold
+\t\topenBtn.TextSize = 14
+\t\topenBtn.TextColor3 = C.white
+\t\topenBtn.Text = "1000 $"
+\t\topenBtn.Parent = card
+\t\tmakeCorner(openBtn, 8)
+\t\tlocal openStroke = makeStroke(openBtn, 1.5, C.accent, 0.2)
+\t\tplayHover(openBtn, openStroke)
+\t\tplayClick(openBtn)
+\t\topenBtn.MouseButton1Click:Connect(function()
+\t\t\tif caseOpening then return end
+\t\t\topenCaseEvent:FireServer()
+\t\tend)
+\tend
 '''
 
-          s = s[:start] + case_block + s[end:]
+          s = s[:start] + case_block + s[stop:]
 
-          marker2 = 'buildShopItems = function()'
-          insert_at = s.find(marker2)
-          if insert_at == -1:
-              raise SystemExit('buildShopItems marker not found')
+          insert = s.find('buildShopItems = function()')
+          if insert == -1:
+              raise SystemExit('buildShopItems not found')
 
-          animation = r'''-- ==================== CASE OPENING CLIENT ====================
+          case_client = '''-- ==================== CASE CLIENT V3 ====================
 local caseOpening = false
 
+local function showCaseWinner(name, iconId)
+\tlocal gui = Instance.new("ScreenGui")
+\tgui.Name = "CaseWinner"
+\tgui.ResetOnSpawn = false
+\tgui.IgnoreGuiInset = true
+\tgui.DisplayOrder = 700
+\tgui.Parent = playerGui
+
+\tlocal bg = Instance.new("Frame")
+\tbg.Size = UDim2.new(1, 0, 1, 0)
+\tbg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+\tbg.BackgroundTransparency = 0.25
+\tbg.Parent = gui
+
+\tlocal box = Instance.new("Frame")
+\tbox.Size = UDim2.new(0, 400, 0, 270)
+\tbox.Position = UDim2.new(0.5, 0, 0.5, 0)
+\tbox.AnchorPoint = Vector2.new(0.5, 0.5)
+\tbox.BackgroundColor3 = C.bg
+\tbox.Parent = bg
+\tmakeCorner(box, 16)
+\tmakeStroke(box, 2, C.accent, 0.2)
+
+\tlocal title = Instance.new("TextLabel")
+\ttitle.Size = UDim2.new(1, 0, 0, 45)
+\ttitle.Position = UDim2.new(0, 0, 0, 15)
+\ttitle.BackgroundTransparency = 1
+\ttitle.Font = Enum.Font.GothamBold
+\ttitle.TextSize = 26
+\ttitle.TextColor3 = C.accent
+\ttitle.Text = "YOU GOT!"
+\ttitle.Parent = box
+
+\tlocal icon = Instance.new("ImageLabel")
+\ticon.Size = UDim2.new(0, 100, 0, 100)
+\ticon.Position = UDim2.new(0.5, 0, 0, 68)
+\ticon.AnchorPoint = Vector2.new(0.5, 0)
+\ticon.BackgroundTransparency = 1
+\ticon.Image = iconId or "rbxassetid://298260830"
+\ticon.Parent = box
+
+\tlocal label = Instance.new("TextLabel")
+\tlabel.Size = UDim2.new(1, -20, 0, 38)
+\tlabel.Position = UDim2.new(0, 10, 0, 175)
+\tlabel.BackgroundTransparency = 1
+\tlabel.Font = Enum.Font.GothamBold
+\tlabel.TextSize = 21
+\tlabel.TextColor3 = C.white
+\tlabel.Text = tostring(name)
+\tlabel.Parent = box
+
+\tlocal close = Instance.new("TextButton")
+\tclose.Size = UDim2.new(0, 160, 0, 34)
+\tclose.Position = UDim2.new(0.5, 0, 1, -45)
+\tclose.AnchorPoint = Vector2.new(0.5, 0)
+\tclose.BackgroundColor3 = C.accent
+\tclose.Font = Enum.Font.GothamBold
+\tclose.TextSize = 14
+\tclose.TextColor3 = C.white
+\tclose.Text = "OK"
+\tclose.Parent = box
+\tmakeCorner(close, 8)
+\tclose.MouseButton1Click:Connect(function()
+\t\tgui:Destroy()
+\t\tcaseOpening = false
+\tend)
+end
+
 openCaseEvent.OnClientEvent:Connect(function(data)
-	if not data then return end
+\tif caseOpening then return end
+\tif not data or not data.success then
+\t\tif safeGetSetting('uiSounds', true) then errorSound:Play() end
+\t\tif _G.showNotification then
+\t\t\t_G.showNotification(data and data.reason == "NOT_ENOUGH_MONEY" and "Not enough money!" or "Case error!", C.red, 3)
+\t\tend
+\t\treturn
+\tend
 
-	if not data.success then
-		if safeGetSetting('uiSounds', true) then errorSound:Play() end
-		if _G.showNotification then
-			local msg = data.reason == "NOT_ENOUGH_MONEY" and "Not enough money!" or "Case cannot be opened!"
-			_G.showNotification(msg, C.red, 3)
-		end
-		return
-	end
+\tcaseOpening = true
+\tlocal gui = Instance.new("ScreenGui")
+\tgui.Name = "CaseOpening"
+\tgui.ResetOnSpawn = false
+\tgui.IgnoreGuiInset = true
+\tgui.DisplayOrder = 650
+\tgui.Parent = playerGui
 
-	if caseOpening then return end
-	caseOpening = true
+\tlocal bg = Instance.new("Frame")
+\tbg.Size = UDim2.new(1, 0, 1, 0)
+\tbg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+\tbg.BackgroundTransparency = 0.15
+\tbg.Parent = gui
 
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "CaseOpening"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.DisplayOrder = 600
-	gui.Parent = playerGui
+\tlocal box = Instance.new("Frame")
+\tbox.Size = UDim2.new(0, 700, 0, 245)
+\tbox.Position = UDim2.new(0.5, 0, 0.5, 0)
+\tbox.AnchorPoint = Vector2.new(0.5, 0.5)
+\tbox.BackgroundColor3 = C.bg
+\tbox.Parent = bg
+\tmakeCorner(box, 16)
+\tmakeStroke(box, 2, C.accent, 0.2)
 
-	local overlay = Instance.new("Frame")
-	overlay.Size = UDim2.new(1, 0, 1, 0)
-	overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	overlay.BackgroundTransparency = 0.2
-	overlay.Parent = gui
+\tlocal title = Instance.new("TextLabel")
+\ttitle.Size = UDim2.new(1, 0, 0, 35)
+\ttitle.Position = UDim2.new(0, 0, 0, 8)
+\ttitle.BackgroundTransparency = 1
+\ttitle.Font = Enum.Font.GothamBold
+\ttitle.TextSize = 20
+\ttitle.TextColor3 = C.white
+\ttitle.Text = "OPENING CASE..."
+\ttitle.Parent = box
 
-	local box = Instance.new("Frame")
-	box.Size = UDim2.new(0, 700, 0, 260)
-	box.Position = UDim2.new(0.5, 0, 0.5, 0)
-	box.AnchorPoint = Vector2.new(0.5, 0.5)
-	box.BackgroundColor3 = C.bg
-	box.Parent = overlay
-	makeCorner(box, 16)
-	makeStroke(box, 2, C.accent, 0.2)
+\tlocal reel = Instance.new("Frame")
+\treel.Size = UDim2.new(1, -40, 0, 135)
+\treel.Position = UDim2.new(0, 20, 0, 50)
+\treel.BackgroundColor3 = Color3.fromRGB(9, 10, 14)
+\treel.ClipsDescendants = true
+\treel.Parent = box
+\tmakeCorner(reel, 10)
 
-	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, 0, 0, 38)
-	title.Position = UDim2.new(0, 0, 0, 10)
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.GothamBold
-	title.TextSize = 21
-	title.TextColor3 = C.white
-	title.Text = "OPENING CASE..."
-	title.Parent = box
+\tlocal marker = Instance.new("Frame")
+\tmarker.Size = UDim2.new(0, 4, 1, 0)
+\tmarker.Position = UDim2.new(0.5, -2, 0, 0)
+\tmarker.BackgroundColor3 = C.accent
+\tmarker.ZIndex = 20
+\tmarker.Parent = reel
 
-	local reel = Instance.new("Frame")
-	reel.Size = UDim2.new(1, -40, 0, 132)
-	reel.Position = UDim2.new(0, 20, 0, 58)
-	reel.BackgroundColor3 = Color3.fromRGB(9, 10, 14)
-	reel.ClipsDescendants = true
-	reel.Parent = box
-	makeCorner(reel, 10)
+\tlocal track = Instance.new("Frame")
+\ttrack.Size = UDim2.new(0, 6000, 1, 0)
+\ttrack.BackgroundTransparency = 1
+\ttrack.Parent = reel
 
-	local center = Instance.new("Frame")
-	center.Size = UDim2.new(0, 4, 1, 0)
-	center.Position = UDim2.new(0.5, -2, 0, 0)
-	center.BackgroundColor3 = C.accent
-	center.ZIndex = 10
-	center.Parent = reel
+\tlocal layout = Instance.new("UIListLayout")
+\tlayout.FillDirection = Enum.FillDirection.Horizontal
+\tlayout.Padding = UDim.new(0, 8)
+\tlayout.VerticalAlignment = Enum.VerticalAlignment.Center
+\tlayout.Parent = track
 
-	local track = Instance.new("Frame")
-	track.Size = UDim2.new(0, 6000, 1, 0)
-	track.BackgroundTransparency = 1
-	track.Parent = reel
+\tlocal names = {}
+\tfor _, tool in ipairs(shopItemsFolder:GetChildren()) do
+\t\tif tool:IsA("Tool") then table.insert(names, tool.Name) end
+\tend
+\tif #names == 0 then
+\t\tgui:Destroy()
+\t\tcaseOpening = false
+\t\treturn
+\tend
 
-	local layout = Instance.new("UIListLayout")
-	layout.FillDirection = Enum.FillDirection.Horizontal
-	layout.Padding = UDim.new(0, 8)
-	layout.VerticalAlignment = Enum.VerticalAlignment.Center
-	layout.Parent = track
+\tlocal winnerIndex = 40
+\tfor i = 1, 50 do
+\t\tlocal name = (i == winnerIndex) and data.item or names[math.random(1, #names)]
+\t\tlocal source = shopItemsFolder:FindFirstChild(name)
 
-	local names = {}
-	for _, tool in ipairs(shopItemsFolder:GetChildren()) do
-		if tool:IsA("Tool") then
-			table.insert(names, tool.Name)
-		end
-	end
+\t\tlocal card = Instance.new("Frame")
+\t\tcard.Size = UDim2.new(0, 118, 0, 115)
+\t\tcard.BackgroundColor3 = C.card
+\t\tcard.Parent = track
+\t\tmakeCorner(card, 8)
+\t\tmakeStroke(card, i == winnerIndex and 2 or 1, i == winnerIndex and C.accent or C.white, i == winnerIndex and 0.1 or 0.7)
 
-	if #names == 0 then
-		gui:Destroy()
-		caseOpening = false
-		return
-	end
+\t\tlocal image = Instance.new("ImageLabel")
+\t\timage.Size = UDim2.new(0, 62, 0, 62)
+\t\timage.Position = UDim2.new(0.5, 0, 0, 7)
+\t\timage.AnchorPoint = Vector2.new(0.5, 0)
+\t\timage.BackgroundTransparency = 1
+\t\timage.Image = source and source.TextureId ~= "" and source.TextureId or "rbxassetid://298260830"
+\t\timage.Parent = card
 
-	local winnerIndex = 38
-	for i = 1, 50 do
-		local name = (i == winnerIndex) and data.item or names[math.random(1, #names)]
-		local source = shopItemsFolder:FindFirstChild(name)
+\t\tlocal text = Instance.new("TextLabel")
+\t\ttext.Size = UDim2.new(1, -8, 0, 32)
+\t\ttext.Position = UDim2.new(0, 4, 1, -35)
+\t\ttext.BackgroundTransparency = 1
+\t\ttext.Font = Enum.Font.GothamBold
+\t\ttext.TextSize = 10
+\t\ttext.TextColor3 = C.white
+\t\ttext.TextWrapped = true
+\t\ttext.Text = name
+\t\ttext.Parent = card
+\tend
 
-		local card = Instance.new("Frame")
-		card.Size = UDim2.new(0, 118, 0, 112)
-		card.BackgroundColor3 = C.card
-		card.Parent = track
-		makeCorner(card, 8)
-		makeStroke(card, i == winnerIndex and 2 or 1, i == winnerIndex and C.accent or C.white, i == winnerIndex and 0.1 or 0.7)
+\ttask.wait()
+\tlocal target = -((winnerIndex - 1) * 126) + reel.AbsoluteSize.X / 2 - 59
+\tif safeGetSetting('uiSounds', true) then clickSound:Play() end
+\tlocal tween = TweenService:Create(track, TweenInfo.new(4.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = UDim2.new(0, target, 0, 0)})
+\ttween:Play()
+\ttween.Completed:Wait()
+\ttask.wait(0.25)
+\tgui:Destroy()
 
-		local icon = Instance.new("ImageLabel")
-		icon.Size = UDim2.new(0, 64, 0, 64)
-		icon.Position = UDim2.new(0.5, 0, 0, 6)
-		icon.AnchorPoint = Vector2.new(0.5, 0)
-		icon.BackgroundTransparency = 1
-		icon.Image = source and source.TextureId ~= "" and source.TextureId or "rbxassetid://298260830"
-		icon.Parent = card
-
-		local label = Instance.new("TextLabel")
-		label.Size = UDim2.new(1, -8, 0, 32)
-		label.Position = UDim2.new(0, 4, 1, -36)
-		label.BackgroundTransparency = 1
-		label.Font = Enum.Font.GothamBold
-		label.TextSize = 11
-		label.TextColor3 = C.white
-		label.TextWrapped = true
-		label.Text = name
-		label.Parent = card
-	end
-
-	task.wait()
-	local cardWidth = 118
-	local gap = 8
-	local targetX = -((winnerIndex - 1) * (cardWidth + gap)) + reel.AbsoluteSize.X / 2 - cardWidth / 2
-
-	if safeGetSetting('uiSounds', true) then clickSound:Play() end
-	local tween = TweenService:Create(track, TweenInfo.new(4.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-		Position = UDim2.new(0, targetX, 0, 0)
-	})
-	tween:Play()
-	tween.Completed:Wait()
-
-	local resultName = Instance.new("TextLabel")
-	resultName.Size = UDim2.new(1, -20, 0, 45)
-	resultName.Position = UDim2.new(0, 10, 1, -55)
-	resultName.BackgroundTransparency = 1
-	resultName.Font = Enum.Font.GothamBold
-	resultName.TextSize = 24
-	resultName.TextColor3 = C.accent
-	resultName.Text = "YOU GOT: " .. tostring(data.item)
-	resultName.Parent = box
-
-	title.Text = "CASE OPENED!"
-	if safeGetSetting('uiSounds', true) then successSound:Play() end
-
-	task.wait(2.5)
-	gui:Destroy()
-	caseOpening = false
+\tlocal winner = shopItemsFolder:FindFirstChild(data.item)
+\tshowCaseWinner(data.item, winner and winner.TextureId or nil)
 end)
 
 '''
 
-          s = s[:insert_at] + animation + s[insert_at:]
-          s = s.replace('-- ==================== CASE OPENING CLIENT ====================\n', '-- ==================== CASE OPENING CLIENT V2 ====================\n', 1)
-
+          s = s[:insert] + case_client + s[insert:]
           p.write_text(s, encoding='utf-8')
-          print('Patched localscript.lua')
           PY
 
-      - name: Commit patched LocalScript and clean up
-        shell: bash
-        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add localscript.lua
-          git commit -m "Apply case shop [case-done]" || exit 0
+          git commit -m "case shop client [case-done]"
           git push
