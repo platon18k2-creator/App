@@ -1,6 +1,5 @@
 -- CaseServer.server.lua
--- Положи этот Script в ServerScriptService в Roblox Studio.
--- Он создаёт RemoteEvent сам, поэтому вручную создавать его не нужно.
+-- Положи этот Script в ServerScriptService.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -14,6 +13,7 @@ if not openCaseEvent then
 	openCaseEvent.Parent = ReplicatedStorage
 end
 
+local CASE_PRICE = 1000
 local cooldown = {}
 local COOLDOWN = 1
 
@@ -44,8 +44,7 @@ local function giveTool(player, tool)
 		return true
 	end
 
-	local clone = tool:Clone()
-	clone.Parent = backpack
+	tool:Clone().Parent = backpack
 	return true
 end
 
@@ -56,14 +55,34 @@ openCaseEvent.OnServerEvent:Connect(function(player)
 	end
 	cooldown[player] = now
 
-	local winner = getRandomTool()
-	if not winner then
-		warn("CaseServer: в ReplicatedStorage.ShopItems нет Tool")
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local money = leaderstats and leaderstats:FindFirstChild("Money")
+	if not money or money.Value < CASE_PRICE then
+		openCaseEvent:FireClient(player, {
+			success = false,
+			reason = "NOT_ENOUGH_MONEY",
+			price = CASE_PRICE,
+		})
 		return
 	end
 
+	local winner = getRandomTool()
+	if not winner then
+		openCaseEvent:FireClient(player, {
+			success = false,
+			reason = "NO_ITEMS",
+		})
+		return
+	end
+
+	money.Value -= CASE_PRICE
 	giveTool(player, winner)
-	openCaseEvent:FireClient(player, winner.Name)
+
+	openCaseEvent:FireClient(player, {
+		success = true,
+		item = winner.Name,
+		price = CASE_PRICE,
+	})
 end)
 
 Players.PlayerRemoving:Connect(function(player)
